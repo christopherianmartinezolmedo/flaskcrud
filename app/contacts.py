@@ -1,10 +1,17 @@
-from flask import Blueprint, request, render_template, redirect, url_for, flash
+from flask import Blueprint, request, render_template, redirect, url_for, flash, abort
+from MySQLdb import IntegrityError
 from db import mysql
 
-contacts = Blueprint('contacts', __name__, template_folder='app/templates')
+contacts = Blueprint('contacts', __name__)
 
-def get_db_connection():
-    return mysql.connection
+
+def _form_data():
+    return (
+        request.form.get('fullname', '').strip(),
+        request.form.get('phone', '').strip(),
+        request.form.get('email', '').strip(),
+    )
+
 
 @contacts.route('/')
 def Index():
@@ -17,39 +24,44 @@ def Index():
 
 @contacts.route('/add_contact', methods=['POST'])
 def add_contact():
-    if request.method == 'POST':
-        fullname = request.form['fullname']
-        phone = request.form['phone']
-        email = request.form['email']
-        try:
-            cur = mysql.connection.cursor()
-            cur.execute(
-                "INSERT INTO contacts (fullname, phone, email) VALUES (%s,%s,%s)", (fullname, phone, email))
-            mysql.connection.commit()
-            flash('Contact Added successfully')
-            return redirect(url_for('contacts.Index'))
-        except Exception as e:
-            flash(e.args[1])
-            return redirect(url_for('contacts.Index'))
+    fullname, phone, email = _form_data()
+    if not email:
+        flash('Email is required', 'danger')
+        return redirect(url_for('contacts.Index'))
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO contacts (fullname, phone, email) VALUES (%s, %s, %s)",
+            (fullname, phone, email))
+        mysql.connection.commit()
+        flash('Contact Added successfully', 'success')
+    except IntegrityError:
+        mysql.connection.rollback()
+        flash(f'A contact with email {email} already exists', 'danger')
+    finally:
+        cur.close()
+    return redirect(url_for('contacts.Index'))
 
 
-@contacts.route('/edit/<id>', methods=['POST', 'GET'])
+@contacts.route('/edit/<int:id>')
 def get_contact(id):
     cur = mysql.connection.cursor()
-    cur.execute('SELECT * FROM contacts WHERE id = %s', (id))
-    data = cur.fetchall()
+    cur.execute('SELECT * FROM contacts WHERE id = %s', (id,))
+    contact = cur.fetchone()
     cur.close()
-    print(data[0])
-    return render_template('edit-contact.html', contact=data[0])
+    if contact is None:
+        abort(404)
+    return render_template('edit-contact.html', contact=contact)
 
 
-@contacts.route('/update/<id>', methods=['POST'])
+@contacts.route('/update/<int:id>', methods=['POST'])
 def update_contact(id):
-    if request.method == 'POST':
-        fullname = request.form['fullname']
-        phone = request.form['phone']
-        email = request.form['email']
-        cur = mysql.connection.cursor()
+    fullname, phone, email = _form_data()
+    if not email:
+        flash('Email is required', 'danger')
+        return redirect(url_for('contacts.get_contact', id=id))
+    cur = mysql.connection.cursor()
+    try:
         cur.execute("""
             UPDATE contacts
             SET fullname = %s,
@@ -57,15 +69,26 @@ def update_contact(id):
                 phone = %s
             WHERE id = %s
         """, (fullname, email, phone, id))
-        flash('Contact Updated Successfully')
         mysql.connection.commit()
-        return redirect(url_for('contacts.Index'))
+        flash('Contact Updated Successfully', 'success')
+    except IntegrityError:
+        mysql.connection.rollback()
+        flash(f'A contact with email {email} already exists', 'danger')
+        return redirect(url_for('contacts.get_contact', id=id))
+    finally:
+        cur.close()
+    return redirect(url_for('contacts.Index'))
 
 
-@contacts.route('/delete/<string:id>', methods=['POST', 'GET'])
+@contacts.route('/delete/<int:id>', methods=['POST'])
 def delete_contact(id):
     cur = mysql.connection.cursor()
-    cur.execute('DELETE FROM contacts WHERE id = {0}'.format(id))
+    cur.execute('DELETE FROM contacts WHERE id = %s', (id,))
     mysql.connection.commit()
-    flash('Contact Removed Successfully')
+    deleted = cur.rowcount
+    cur.close()
+    if deleted:
+        flash('Contact Removed Successfully', 'success')
+    else:
+        flash('Contact not found', 'danger')
     return redirect(url_for('contacts.Index'))
