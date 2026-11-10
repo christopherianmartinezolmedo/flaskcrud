@@ -5,6 +5,7 @@
     <div class="col-md-5">
       <div class="card card-body">
         <form action="{{url_for('contacts.add_contact')}}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="form-group">
             <input type="text" class="form-control" name="fullname" placeholder="FullName">
           </div>
@@ -41,6 +42,7 @@
             <td>
               <a href="{{ url_for('contacts.get_contact', id=contact.id) }}" class="btn btn-secondary">edit</a>
               <form action="{{ url_for('contacts.delete_contact', id=contact.id) }}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-delete">delete</button>
               </form>
             </td>

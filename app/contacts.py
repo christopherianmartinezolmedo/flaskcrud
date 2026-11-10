@@ -61,6 +61,10 @@ def update_contact(id):
         flash('Email is required', 'danger')
         return redirect(url_for('contacts.get_contact', id=id))
     cur = mysql.connection.cursor()
+    cur.execute('SELECT id FROM contacts WHERE id = %s', (id,))
+    if cur.fetchone() is None:
+        cur.close()
+        abort(404)
     try:
         cur.execute("""
             UPDATE contacts
